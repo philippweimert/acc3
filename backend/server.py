@@ -1,6 +1,7 @@
 from fastapi import FastAPI, APIRouter, HTTPException
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
+from starlette.responses import FileResponse
 from starlette.staticfiles import StaticFiles
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
@@ -138,10 +139,8 @@ async def submit_contact_form(contact_data: ContactForm):
 # Include the router in the main app
 app.include_router(api_router)
 
-# Serve the frontend
-# This must be after all other routes
-app.mount("/", StaticFiles(directory=ROOT_DIR.parent / "frontend/build", html=True), name="static-frontend")
-
+# Serve the frontend's static assets
+app.mount("/static", StaticFiles(directory=ROOT_DIR.parent / "frontend/build/static"), name="static-assets")
 
 app.add_middleware(
     CORSMiddleware,
@@ -157,6 +156,11 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+@app.get("/{full_path:path}")
+async def serve_spa(full_path: str):
+    """Serve the single page application."""
+    return FileResponse(ROOT_DIR.parent / "frontend/build/index.html")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
