@@ -1,38 +1,11 @@
 services:
   - type: web
-    name: acencia-backend
+    name: acencia-fullstack-no-db
     env: python
     region: frankfurt
     plan: free
-    buildCommand: "pip install -r backend/requirements.txt"
+    buildCommand: "npm --prefix frontend install && npm --prefix frontend run build && pip install -r backend/requirements.txt"
     startCommand: "uvicorn backend.server:app --host 0.0.0.0 --port $PORT"
     envVars:
-      - key: MONGO_URL
-        fromDatabase:
-          name: acencia-db
-          property: connectionString
-      - key: DB_NAME
-        value: acencia-db
-      - key: CORS_ORIGINS
-        fromService:
-          type: web
-          name: acencia-frontend
-          property: url
       - key: PYTHON_VERSION
         value: 3.11.4
-  - type: web
-    name: acencia-frontend
-    env: static
-    region: frankfurt
-    plan: free
-    buildCommand: "npm --prefix frontend install && npm --prefix frontend run build"
-    staticPublishPath: "./frontend/build"
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
-  - type: mongodb
-    name: acencia-db
-    region: frankfurt
-    plan: free
-    ipAllowList: [] # Allows connections from everywhere

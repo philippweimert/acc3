@@ -1,6 +1,7 @@
 from fastapi import FastAPI, APIRouter, HTTPException
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
+from starlette.staticfiles import StaticFiles
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
@@ -17,10 +18,14 @@ from email.mime.multipart import MIMEMultipart
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+# MongoDB connection (optional)
+mongo_url = os.environ.get('MONGO_URL')
+db = None
+client = None
+if mongo_url:
+    client = AsyncIOMotorClient(mongo_url)
+    db_name = os.environ.get('DB_NAME', 'acencia-db')
+    db = client[db_name]
 
 # Create the main app without a prefix
 app = FastAPI()
@@ -79,16 +84,16 @@ Gesendet am: {datetime.now().strftime('%d.%m.%Y um %H:%M:%S')}
         # Since we don't have SMTP credentials configured, we'll save to database instead
         # and log the email content
         
-        # Save contact form submission to database
-        contact_dict = contact_data.dict()
-        contact_dict['id'] = str(uuid.uuid4())
-        contact_dict['timestamp'] = datetime.utcnow()
-        contact_dict['status'] = 'sent'
-        
-        await db.contact_submissions.insert_one(contact_dict)
+        # Save contact form submission to database if db is available
+        if db:
+            contact_dict = contact_data.dict()
+            contact_dict['id'] = str(uuid.uuid4())
+            contact_dict['timestamp'] = datetime.utcnow()
+            contact_dict['status'] = 'sent_to_log'
+            await db.contact_submissions.insert_one(contact_dict)
         
         # Log the email content for now (in production, this would actually send)
-        logger.info(f"Contact form submission: {body}")
+        logger.info(f"Contact form submission (database not configured, logged only): {body}")
         
         return {"status": "success", "message": "Nachricht erfolgreich gesendet"}
         
@@ -103,15 +108,20 @@ async def root():
 
 @api_router.post("/status", response_model=StatusCheck)
 async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.dict()
-    status_obj = StatusCheck(**status_dict)
-    _ = await db.status_checks.insert_one(status_obj.dict())
+    status_obj = StatusCheck(**input.dict())
+    if db:
+        await db.status_checks.insert_one(status_obj.dict())
+    else:
+        logger.info("Database not configured. Skipping status check save.")
     return status_obj
 
 @api_router.get("/status", response_model=List[StatusCheck])
 async def get_status_checks():
-    status_checks = await db.status_checks.find().to_list(1000)
-    return [StatusCheck(**status_check) for status_check in status_checks]
+    if db:
+        status_checks = await db.status_checks.find().to_list(1000)
+        return [StatusCheck(**status_check) for status_check in status_checks]
+    logger.info("Database not configured. Returning empty status list.")
+    return []
 
 @api_router.post("/contact")
 async def submit_contact_form(contact_data: ContactForm):
@@ -127,6 +137,11 @@ async def submit_contact_form(contact_data: ContactForm):
 
 # Include the router in the main app
 app.include_router(api_router)
+
+# Serve the frontend
+# This must be after all other routes
+app.mount("/", StaticFiles(directory=ROOT_DIR.parent / "frontend/build", html=True), name="static-frontend")
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -145,4 +160,5 @@ logger = logging.getLogger(__name__)
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
-    client.close()
+    if client:
+        client.close()
