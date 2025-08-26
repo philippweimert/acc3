@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: acencia-fullstack-no-db
+    env: python
+    region: frankfurt
+    plan: free
+    buildCommand: "npm --prefix frontend install && npm --prefix frontend run build && pip install -r backend/requirements.txt"
+    startCommand: "uvicorn backend.server:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.4
